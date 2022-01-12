@@ -54,7 +54,7 @@ class Model:
 
         prior = -1 * scipy.stats.beta.logpdf(cutpoint.detach().numpy(), 1.5, 1.5)[0]
 
-        print('Likelihood = %.7e | Prior = %.7e' % (likelihood, prior))
+#         print('Likelihood = %.7e | Prior = %.7e' % (likelihood, prior))
 
         return likelihood + prior
     
@@ -84,4 +84,4 @@ class Model:
             loss_diff = torch.norm(loss_curr - loss_prev) / (1 + torch.norm(loss_curr) )
 
         self.cutpoint = self.sigmoid(self.cutpoint_logit)
-        print(iteration_num)
+#         print(iteration_num)

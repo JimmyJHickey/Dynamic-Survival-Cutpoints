@@ -6,7 +6,7 @@ import scipy
 import numpy as np
 import matplotlib.pyplot as plt
 from math import exp
-from Node import Node
+from node import Node
 
 # torch.autograd.set_detect_anomaly(True)
 class Model:

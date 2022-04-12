@@ -80,13 +80,7 @@ class CutpointModel(nn.Module):
         return torch.tensor(cutpoint0)
     
     def logit(self, x):
-        return torch.log(x/ (1 - x))
-    
-    # shifted and scaled sigmoid function
-    def sigmoid(self, x, a=0, b=1.):
-        return 1 / (1 + (torch.exp(-1 * (x - a) / b)))
-
-    
+        return torch.log(x/ (1 - x))    
     
     def multinomial_loss(self, X, t, s, layer_net, cutpoints):
         
@@ -104,8 +98,8 @@ class CutpointModel(nn.Module):
         F_t = f_t +  torch.sum(f_t, dim=1, keepdims=True) - torch.cumsum(f_t, dim=1)
 
 
-        left_boundary = torch.transpose(torch.stack([self.sigmoid(t_scaled, lb, self.sigmoid_temperature) for lb in [0] + cutpoints]),0 ,1)
-        right_boundary = torch.transpose(torch.stack([1-self.sigmoid(t_scaled, rb, self.sigmoid_temperature) for rb in cutpoints + [1]]), 0, 1)
+        left_boundary = torch.transpose(torch.stack([torch.sigmoid((t_scaled-lb)/ self.sigmoid_temperature) for lb in [0] + cutpoints]),0 ,1)
+        right_boundary = torch.transpose(torch.stack([1-torch.sigmoid((t_scaled-rb)/ self.sigmoid_temperature) for rb in cutpoints + [1]]), 0, 1)
         
 
 #         parta = torch.unsqueeze(s,1) * f_t

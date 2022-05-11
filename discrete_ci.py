@@ -47,10 +47,8 @@ def discrete_ci(pred, cutpoints, t_test_in, s_test_in, t_train_in):
         # calculate predicted risk for i at the time of their event
         tpi = t_pred_cdf[i, tti_idx]
 
-
         # predicted risk at that time for all but i
-        tp = t_pred_cdf[idx != tti_idx, tti_idx]
-
+        tp = t_pred_cdf[idx != i, tti_idx]
         
         total += np.sum(tti_idx < tt_idx) # observed in i first
 

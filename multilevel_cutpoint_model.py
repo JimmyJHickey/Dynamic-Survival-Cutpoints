@@ -17,24 +17,31 @@ class CutpointModel(nn.Module):
                  sigmoid_temperature = 0.01, 
                  depth = 1, 
                  iterations = 1000,
+                 prior_bool = True,
                  prior_strength = 1,
-                 hidden_size = 32):
+                 hidden_size = 32,
+                 init_method="even"):
         
         super(CutpointModel, self).__init__()
       
         self.X_train = torch.from_numpy(X_train).float()
         self.t_train = torch.from_numpy(t_train).float()
         self.s_train = torch.from_numpy(s_train).float()
+        
+        # if True: will add prior to loss
+        # if False: will add entropy to loss
+        self.prior_bool = prior_bool
+        # multiplier on prior/entropy
         self.prior_strength = prior_strength
         
         self.sigmoid_temperature = sigmoid_temperature 
         self.depth = depth
         self.iterations = iterations
-                
+                        
         p = self.X_train.shape[1]
         
         # set up parameters
-        self.cutpoint0 = self.cutpoint_init(self.depth)
+        self.cutpoint0 = self.cutpoint_init_even(self.depth) if init_method=="even" else self.cutpoint_init_quantile(self.depth, self.t_train)
         self.cutpoints = nn.ParameterList([ nn.Parameter(torch.tensor(cutpoint.item())) for cutpoint in self.cutpoint0])
                 
         self.layers = []
@@ -70,7 +77,7 @@ class CutpointModel(nn.Module):
      
     
     # evenly spaced cutpoints
-    def cutpoint_init(self, depth):
+    def cutpoint_init_even(self, depth):
         root = Node(0)
         Node.build_tree(root, depth)
         inorder_traversal = Node.inorder(root, depth)
@@ -79,11 +86,31 @@ class CutpointModel(nn.Module):
 
         for i in range(0, len(inorder_traversal)):
             index = inorder_traversal[i].index
-            cutpoint0[index] = equal_spacings[i]/2
-#             cutpoint0[index] = equal_spacings[i]
+#             cutpoint0[index] = equal_spacings[i]/2
+            cutpoint0[index] = equal_spacings[i]
 
 
         return torch.tensor(cutpoint0)
+    
+    
+    def cutpoint_init_quantile(self, depth, t):
+        root = Node(0)
+        Node.build_tree(root, depth)
+        inorder_traversal = Node.inorder(root, depth)
+        t_conv = (t - min(t)) / (max(t) - min(t))
+        
+        quantile_spacings = np.linspace(0, 1, 2**(depth+1)+1)
+        quantile_spacings = np.quantile(t_conv, quantile_spacings)[1:-1]
+
+        cutpoint0 = [0] * len(inorder_traversal)
+
+        for i in range(0, len(inorder_traversal)):
+            index = inorder_traversal[i].index
+            cutpoint0[index] = quantile_spacings[i]
+
+
+        return torch.tensor(cutpoint0)
+    
     
     def logit(self, x):
         return torch.log(x/ (1 - x))    
@@ -119,19 +146,21 @@ class CutpointModel(nn.Module):
         nll = -1 * torch.mean(ll)
         
         approx_p = torch.mean(left_boundary * right_boundary, axis=0)
-        entropy = -1 * self.prior_strength * torch.sum(approx_p * torch.log(approx_p))
-
-        return nll - entropy
         
-#         # prior loop
-#         for lb, curr, rb in zip([0] + cutpoints[:-1], cutpoints, cutpoints[1:] + [1]):
-            
-#             temp = (curr - lb) / (rb - lb)
-#             prior += -1 * self.prior_strength * torch.distributions.Beta(torch.tensor(1.5), torch.tensor(1.5)).log_prob(temp)
-#             # use entropy instead of beta prior?
-#             # high entropy would be all cutpoints have equal amount of data in them
-            
-#         return nll + prior
+        # if prior
+        if self.prior_bool:
+             # prior loop
+            for lb, curr, rb in zip([0] + cutpoints[:-1], cutpoints, cutpoints[1:] + [1]):
+                temp = (curr - lb) / (rb - lb)
+                prior += -1 * self.prior_strength * torch.distributions.Beta(torch.tensor(1.5), torch.tensor(1.5)).log_prob(temp)
+                nll += prior
+        # else use entropy
+        else:
+            entropy = -1 * self.prior_strength * torch.sum(approx_p * torch.log(approx_p))
+            nll -= entropy
+
+        return nll
+
     
     
     def train(self):
@@ -167,7 +196,7 @@ class CutpointModel(nn.Module):
             
             print(iteration_num)
             print(f"loss {loss}")
-            print(f"cutpoint {self.cutpoints[0].item()}")
+#             print(f"cutpoint {self.cutpoints[0].item()}")
 
             optimizer.zero_grad()
             loss.backward(retain_graph=True)
@@ -182,17 +211,17 @@ class CutpointModel(nn.Module):
         
 
     #######################################
-    def plot_result(self, t_true, t_false, title = "Survival distribution", label_true="True", label_false="False"):
+    def plot_result(self, t_true, title = "Survival distribution", label_true="endpoint"):
         
-        max_t = max(max(t_true), max(t_false))
-        min_t = min(min(t_true), min(t_false))
+        max_t = max(self.t_train)
+        min_t = min(self.t_train)
         
         cutpoints = [ cutpoint * (max_t - min_t) + min_t for cutpoint in self.cutpoints ]
         cutpoints_init = [cutpoint * (max_t-min_t) + min_t for cutpoint in self.cutpoint0]
 
         plt.hist(t_true, color="red", bins=50, alpha = 0.5, label=label_true)
 #         plt.hist(t_false, color="blue",bins=50,  alpha = 0.5, label=label_false)
-
+        plt.xlabel('Survival time')
         plt.legend()
         plt.title(title + ": cutpoints init")
 
@@ -202,7 +231,7 @@ class CutpointModel(nn.Module):
 
         plt.hist(t_true, color="red", bins=50, alpha = 0.5, label=label_true)
 #         plt.hist(t_false, color="blue", bins=50, alpha = 0.5, label=label_false)
-
+        plt.xlabel('Survival time')
         plt.legend()
         plt.title( title + ": cutpoints learned")
 
